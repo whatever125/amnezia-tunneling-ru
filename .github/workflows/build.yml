@@ -13,6 +13,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: build-lists
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -58,11 +62,20 @@ jobs:
           python3 scripts/derive_ip.py amnezia.json cidrs.txt ip2asn.tsv amnezia-ip-lite.json
           rm cidrs.txt ip2asn.tsv
 
+      - name: Build amnezia-ip-cn.json
+        run: |
+          # Китайские подсети для split tunneling. chnroutes2 — live-BGP от
+          # четырёх коллекторов, уже агрегированный (супернеттинг ~16x), поэтому
+          # как вход лучше, чем дамп geoip. Обновляется ежечасно.
+          curl -sSL "https://raw.githubusercontent.com/misakaio/chnroutes2/master/chnroutes.txt" -o cn_cidrs.txt
+          python3 scripts/extract_ip.py cn_cidrs.txt amnezia-ip-cn.json
+          rm cn_cidrs.txt
+
       - name: Commit updated lists
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add amnezia.json amnezia-ip.json amnezia-ip-lite.json
+          git add amnezia.json amnezia-ip.json amnezia-ip-lite.json amnezia-ip-cn.json
           if ! git diff --cached --quiet; then
             git commit -m "chore: update domain and IP lists ($(date -u +%Y-%m-%d))"
             git push
@@ -72,6 +85,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Списки российских доменов и IP-подсетей для Amnezia VPN (split tunneling)." > release.txt
+          echo "Списки российских доменов и IP-подсетей, а также китайских IP-подсетей для Amnezia VPN (split tunneling)." > release.txt
           gh release delete latest --cleanup-tag -y || true
-          gh release create "latest" amnezia.json amnezia-ip.json amnezia-ip-lite.json -F release.txt -t "Amnezia RU Domain & IP Lists"
+          gh release create "latest" amnezia.json amnezia-ip.json amnezia-ip-lite.json amnezia-ip-cn.json -F release.txt -t "Amnezia RU & CN Domain/IP Lists"
